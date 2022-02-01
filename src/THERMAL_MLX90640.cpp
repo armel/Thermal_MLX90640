@@ -14,6 +14,10 @@
 */
 #include <M5Stack.h>
 
+#include "FS.h"
+#include "SPIFFS.h"
+#include <M5StackUpdater.h>
+
 #include "MLX90640_API.h"
 #include "MLX90640_I2C_Driver.h"
 
@@ -24,6 +28,8 @@ const byte MLX90640_address = 0x33; //Default 7-bit unshifted address of the MLX
 #define ROWS 24
 #define COLS_2 (COLS * 2)
 #define ROWS_2 (ROWS * 2)
+
+#define TIMEOUT_BIN_LOADER 3 // 3 sec
 
 float pixelsArraySize = COLS * ROWS;
 float pixels[COLS * ROWS];
@@ -93,6 +99,11 @@ void interpolate_image(float *src, uint8_t src_rows, uint8_t src_cols, float *de
 
 long loopTime, startTime, endTime, fps;
 
+// Bin loader
+File root;
+String binFilename[8];
+uint8_t binIndex = 0;
+
 /***infodisplay()*****/
 void infodisplay(void) {
   M5.Lcd.fillRect(0, 198, 320, 4, TFT_WHITE);
@@ -142,6 +153,132 @@ boolean isConnected()
   return (true);
 }
 
+// List files on SPIFFS
+void getBinaryList(File dir)
+{
+  while (true) {
+    File entry =  dir.openNextFile();
+    if (!entry) {
+      // no more files
+      break;
+    }
+
+    if(strstr(entry.name(), "/.") == NULL && strstr(entry.name(), ".bin") != NULL) {
+      binFilename[binIndex] = entry.name();
+      binIndex++;
+    }
+
+    if (entry.isDirectory() && strstr(entry.name(), "/.") == NULL) {
+      getBinaryList(entry);
+    }
+
+    entry.close();
+  }
+}
+
+// Bin Loader
+void binLoader() {
+  boolean click = 0;
+  int8_t cursor = 0;
+  int8_t change = 255;
+  String tmpName;
+
+  if(!SPIFFS.begin())
+  {
+    Serial.println("SPIFFS Mount Failed");
+
+    M5.Lcd.setTextFont(1);
+    M5.Lcd.setTextSize(2);
+
+    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    M5.Lcd.setTextDatum(CC_DATUM);
+    M5.Lcd.drawString("Flash File System", 160, 20);
+    M5.Lcd.drawString("needs to be formated.", 160, 50);
+    M5.Lcd.drawString("It takes around 4 minutes.", 160, 100);
+    M5.Lcd.drawString("Please, wait until ", 160, 150);
+    M5.Lcd.drawString("the application starts !", 160, 180);
+
+    Serial.println("SPIFFS Formating...");
+
+    SPIFFS.format();    // Format SPIFFS...
+
+    M5.Lcd.setTextFont(0);
+    M5.Lcd.setTextSize(0);
+
+    return;
+  }
+  
+  root = SPIFFS.open("/");
+  getBinaryList(root);
+
+  if(binIndex != 0) {
+    M5.Lcd.setTextFont(1);
+    M5.Lcd.setTextSize(1);
+
+    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    M5.Lcd.setTextDatum(CC_DATUM);
+
+    for (uint8_t i = TIMEOUT_BIN_LOADER * 10; i > 0; i--) {
+      M5.update();
+
+      if( i % 10 == 0) {
+        tmpName += ".";
+        M5.Lcd.drawString(tmpName, 160, 20);
+      }
+
+      if(M5.BtnA.wasPressed() || M5.BtnC.wasPressed()) {
+        return;
+      }
+      else if(M5.BtnB.wasPressed()) {
+        click = 1;
+        break;
+      }
+
+      vTaskDelay(100);
+    }
+  }
+
+  while(click == 1) {
+    M5.Lcd.setTextFont(1);
+    M5.Lcd.setTextSize(2);
+
+    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    M5.Lcd.setTextDatum(CC_DATUM);
+    M5.Lcd.drawString("Bin Loader", 160, 20);
+
+    M5.update();
+
+    if(M5.BtnA.wasPressed()) {
+      cursor--;
+    }
+    else if(M5.BtnC.wasPressed()) {
+      cursor++;
+    }
+    else if(M5.BtnB.wasPressed()) {
+      updateFromFS(SPIFFS, binFilename[cursor]);
+      ESP.restart(); 
+    }
+
+    cursor = (cursor < 0) ? binIndex - 1 : cursor;
+    cursor = (cursor > binIndex - 1) ? 0 : cursor;
+
+    if(change != cursor) {
+      change = cursor;
+      M5.Lcd.setTextPadding(320);
+
+      for(uint8_t i = 0; i < binIndex; i++) {
+        tmpName = binFilename[i].substring(1);
+
+        if (cursor == i) {
+          tmpName = ">> " + tmpName + " <<";
+        }
+        
+        M5.Lcd.drawString(tmpName, 160, 60 + i * 20);
+      }
+    }
+    vTaskDelay(100);
+  }
+}
 
 void setup()
 {
