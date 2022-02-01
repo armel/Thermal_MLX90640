@@ -283,6 +283,10 @@ void binLoader() {
 void setup()
 {
   M5.begin();
+
+  // Bin Loader
+  binLoader();
+
   M5.Power.begin();
   Wire.begin();
   Wire.setClock(450000); //Increase I2C clock speed to 400kHz.  增加I2C时钟速度到400kHz
