@@ -103,6 +103,8 @@ long loopTime, startTime, endTime, fps;
 File root;
 String binFilename[128];
 uint8_t binIndex = 0;
+int btnA, btnB, btnC;
+
 
 /***infodisplay()*****/
 void infodisplay(void) {
@@ -151,6 +153,15 @@ boolean isConnected()
   if (Wire.endTransmission() != 0)
     return (false); //Sensor did not ACK.
   return (true);
+}
+
+// Get button
+void getButton()
+{
+  M5.update();
+  btnA = M5.BtnA.read();
+  btnB = M5.BtnB.read();
+  btnC = M5.BtnC.read();
 }
 
 // List files on SPIFFS or SD
